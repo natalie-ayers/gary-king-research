@@ -13,6 +13,11 @@ from striprtf.striprtf import rtf_to_text
 from pathlib import Path
 from deep_translator import GoogleTranslator
 from openpyxl import load_workbook
+from PIL import Image
+from pytesseract import image_to_string
+import os, docx2txt
+
+
 # also must run 'sudo apt-get install antiword' to install antiword for textract
 
 
@@ -68,6 +73,38 @@ def processDOC(doc_file):
         return
     except:
         return ("! - Error parsing '%s', skipping..." % basename)
+
+def get_doc_text(file):
+    #print("file",file)
+    filepath = "../../Downloads/Roskomnadzor/"
+#    try:
+    if file.endswith('.docx'):
+        text = docx2txt.process(file)
+        return text
+    elif file.endswith('.doc'):
+       # converting .doc to .docx
+        doc_file = filepath + file
+        docx_file = file + 'x'
+        if not os.path.exists(docx_file):
+            #print("using antiword to write",doc_file, "to",docx_file)
+            os.system('antiword -m "8859-5.txt" ' + doc_file + ' > ' + docx_file)
+            #print("trying to read docx file")
+            with open(docx_file) as f:
+                print("reading docx file",docx_file)
+                text = f.read()
+                if( text != None ):
+                    with open(file + ".txt", "w+") as txt:
+                        transl_text = GoogleTranslator(source="ru", target="en").translate(text=text)
+                        txt.write(transl_text + "\n")
+            os.remove(docx_file) #docx_file was just to read, so deleting
+        else:
+            # already a file with same name as doc exists having docx extension, 
+            # which means it is a different file, so we cant read it
+            print('Info : file with same name of doc exists having docx extension, so we cant read it')
+            text = ''
+    return
+#    except:
+#        return ("! - Error parsing '%s', skipping..." % basename)
 
 # Takes a path to a single .rtf, saves contents as
 # "foo.rtf.txt" in the current directory
@@ -130,9 +167,9 @@ def updateBar(error=None):
 
 # Loop over all relevant files in a folder, ingest them in background processes
 if __name__ == '__main__':
-    
+    """
     # pdfs
-    pdfs = glob.glob("/mnt/c/Users/natra/Documents/Research/Gary/sample_russian_docs/*pdf")
+    pdfs = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*pdf")
     bar = Bar("Extracting text from PDFs", max=len(pdfs))
     pool = get_context("spawn").Pool()
     for pdf in pdfs:
@@ -142,7 +179,7 @@ if __name__ == '__main__':
     bar.finish()
 
     # now docx
-    docxs = glob.glob("/mnt/c/Users/natra/Documents/Research/Gary/sample_russian_docs/*docx")
+    docxs = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*docx")
     bar = Bar("Extracting text from DOCX", max=len(docxs))
     pool = get_context("spawn").Pool()
     for docx_file in docxs:
@@ -150,19 +187,22 @@ if __name__ == '__main__':
     pool.close()
     pool.join()
     bar.finish()
-
+    """
     # now doc
-    docs = glob.glob("/mnt/c/Users/natra/Documents/Research/Gary/sample_russian_docs/*doc")
+    docs = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*doc")
+    docs = [os.path.basename(x) for x in docs]
     bar = Bar("Extracting text from DOC", max=len(docs))
     pool = get_context("spawn").Pool()
-    for doc_file in docs:
-        pool.apply_async(processDOC, [doc_file], callback=updateBar)
+    for doc_file in docs[0:4]:
+        #pool.apply_async(processDOC, [doc_file], callback=updateBar)
+        pool.apply_async(get_doc_text, [doc_file], callback=updateBar)
     pool.close()
     pool.join()
     bar.finish()
-
+    
+    """
     # now rtf
-    rtfs = glob.glob("/mnt/c/Users/natra/Documents/Research/Gary/sample_russian_docs/*rtf")
+    rtfs = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*rtf")
     bar = Bar("Extracting text from RTF", max=len(rtfs))
     pool = get_context("spawn").Pool()
     for rtf in rtfs:
@@ -172,7 +212,7 @@ if __name__ == '__main__':
     bar.finish()
     
     # now xls
-    xlss = glob.glob("/mnt/c/Users/natra/Documents/Research/Gary/sample_russian_docs/*xls")
+    xlss = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*xls")
     bar = Bar("Extracting text from XLS", max=len(xlss))
     pool = get_context("spawn").Pool()
     for xls in xlss:
@@ -180,7 +220,7 @@ if __name__ == '__main__':
     pool.close()
     pool.join()
     bar.finish()
-
+    """
 
 
 
