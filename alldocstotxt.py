@@ -16,31 +16,82 @@ from openpyxl import load_workbook
 from PIL import Image
 from pytesseract import image_to_string
 import os, docx2txt
-
+from pdf2image import convert_from_path
 
 # also must run 'sudo apt-get install antiword' to install antiword for textract
+# install tesseract and the Russian language traindata
+# on linux, this is done with `sudo apt install tesseract-ocr` and 
+# `sudo apt install tesseract-ocr-rus`
 
+# also install poppler outside of Python: https://pdf2image.readthedocs.io/en/latest/installation.html
 
 # Used in main and updateBar, but not child processes
 bar = None
+
+TESSERACT_PATH = "./usr/bin/tesseract"
 
 # Takes a path to a single pdf, saves contents as
 # "foo.pdf.txt" in the current directory
 def processPDF(pdf):
     basename = os.path.basename(pdf)
-    try:
-        with pdfplumber.open(pdf) as pdfdoc:
-            with open(basename + ".txt", "w+") as txt:
-                for page in pdfdoc.pages:
-                    text = page.extract_text()
-                    #print("text",text)
-                    if( text != None ):
+    #try:
+    with pdfplumber.open(pdf) as pdfdoc:
+        with open(basename + ".txt", "w+") as txt:
+            for page in pdfdoc.pages:
+                text = page.extract_text()
+                #print("text",text)
+                if text != None:
                         transl_text = GoogleTranslator(source="ru", target="en").translate(text=text)
                         txt.write(transl_text + "\n")
-        return
-    except:
-        return ("! - Error parsing '%s', skipping..." % basename)
 
+    # use arbitrary, small cutoff for byte size of txt file
+    # to determine whether PDF was read successfully and decide
+    # to try OCR
+    if os.path.getsize(basename + ".txt") < 20:
+        print("Processing PDF with OCR..")
+        jpg_files = PDFtoJPG(pdf)
+        processJPG(jpg_files, basename)
+        #return
+    #except:
+    #return ("! - Error parsing '%s', skipping..." % basename)
+
+
+def PDFtoJPG(pdf):
+    """
+    Convert PDFs to JPG files for processing with OCR
+    """
+    basename = os.path.basename(pdf)
+    pdf_imgs = convert_from_path(pdf)
+    jpg_files = []
+    for i in range(len(pdf_imgs)):
+        filename = pdf+str(i)+'.jpg'
+        pdf_imgs[i].save(filename, "JPEG")
+        jpg_files.append(filename)
+    return jpg_files
+
+
+def processJPG(jpgs, basename=None):
+    """
+    Process either a single jpg or list of jpg images
+        and store the results as a single text file
+    """
+    if basename:
+        output_file = basename + ".txt"
+        # delete files if they were created from PDF for OCR
+        del_jpgs = True
+    else:
+        output_file = os.path.basename(jpgs) + ".txt"
+        print("output_file",output_file)
+        del_jpgs = False
+    with open(output_file, "w+") as f:
+        if isinstance(jpgs, str):
+            jpgs = [jpgs]
+        for img_file in jpgs:
+            text = str(((image_to_string(Image.open(img_file), lang="rus"))))
+            transl_text = GoogleTranslator(source="ru", target="en").translate(text=text)
+            if del_jpgs:
+                os.remove(img_file)
+            f.write(transl_text)  
 
 # Takes a path to a single .docx, saves contents as
 # "foo.docx.txt" in the current directory
@@ -167,9 +218,11 @@ def updateBar(error=None):
 
 # Loop over all relevant files in a folder, ingest them in background processes
 if __name__ == '__main__':
-    """
+    #file_location = "C:/Users/ARK Silverlining/Downloads/Roskomnadzor"
+    file_location = "/mnt/c/Users/natra/Documents/Research/Gary/sample_russian_docs"
     # pdfs
-    pdfs = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*pdf")
+    """
+    pdfs = glob.glob(file_location + "/*pdf")
     bar = Bar("Extracting text from PDFs", max=len(pdfs))
     pool = get_context("spawn").Pool()
     for pdf in pdfs:
@@ -177,9 +230,44 @@ if __name__ == '__main__':
     pool.close()
     pool.join()
     bar.finish()
+    """
+    # now jpgs
+    jpgs = glob.glob(file_location + "/*jpg")
+    jpgs.extend(glob.glob(file_location + "/*JPG"))
+    bar = Bar("Extracting text from JPGs", max=len(jpgs))
+    pool = get_context("spawn").Pool()
+    for jpg in jpgs:
+        pool.apply_async(processJPG, [jpg], callback=updateBar)
+    pool.close()
+    pool.join()
+    bar.finish()
 
+    # now pngs
+    pngs = glob.glob(file_location + "/*png")
+    pngs.extend(glob.glob(file_location + "/*PNG"))
+    bar = Bar("Extracting text from PNGs", max=len(pngs))
+    pool = get_context("spawn").Pool()
+    for png in pngs:
+        # use same processJPG for PNGs and all other image formats
+        pool.apply_async(processJPG, [png], callback=updateBar)
+    pool.close()
+    pool.join()
+    bar.finish()
+
+    # now tiff
+    tiffs = glob.glob(file_location + "/*tif*")
+    tiffs.extend(glob.glob(file_location + "/*TIF*"))
+    bar = Bar("Extracting text from TIFFs", max=len(pngs))
+    pool = get_context("spawn").Pool()
+    for tiff in tiffs:
+        # use same processJPG for TIFFS and all other image formats
+        pool.apply_async(processJPG, [tiff], callback=updateBar)
+    pool.close()
+    pool.join()
+    bar.finish()
+    """
     # now docx
-    docxs = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*docx")
+    docxs = glob.glob(file_location + "/*docx")
     bar = Bar("Extracting text from DOCX", max=len(docxs))
     pool = get_context("spawn").Pool()
     for docx_file in docxs:
@@ -187,9 +275,9 @@ if __name__ == '__main__':
     pool.close()
     pool.join()
     bar.finish()
-    """
+    
     # now doc
-    docs = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*doc")
+    docs = glob.glob(file_location + "/*doc")
     docs = [os.path.basename(x) for x in docs]
     bar = Bar("Extracting text from DOC", max=len(docs))
     pool = get_context("spawn").Pool()
@@ -200,9 +288,8 @@ if __name__ == '__main__':
     pool.join()
     bar.finish()
     
-    """
     # now rtf
-    rtfs = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*rtf")
+    rtfs = glob.glob(file_location + "/*rtf")
     bar = Bar("Extracting text from RTF", max=len(rtfs))
     pool = get_context("spawn").Pool()
     for rtf in rtfs:
@@ -212,7 +299,7 @@ if __name__ == '__main__':
     bar.finish()
     
     # now xls
-    xlss = glob.glob("C:/Users/ARK Silverlining/Downloads/Roskomnadzor/*xls")
+    xlss = glob.glob(file_location + "/*xls")
     bar = Bar("Extracting text from XLS", max=len(xlss))
     pool = get_context("spawn").Pool()
     for xls in xlss:
@@ -221,7 +308,6 @@ if __name__ == '__main__':
     pool.join()
     bar.finish()
     """
-
 
 
 # References
